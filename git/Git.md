@@ -75,12 +75,13 @@
 
    ```bash
    $ git remote add origin ____경로______
+   $ git remote add origin https://github.com/RYUNSUN/TIL_.git
    ```
 
    * 원격 저장소(remote)를 등록(add)한다. origin 이라는 이름으로 경로를 !
    * 최초에 한번만 등록하면 된다. 
    * 아래의 명령어로 현재 등록된 원격 저장소를 확인할 수 있다.
-   
+
    ```bash
    $ git remote -v
    origin  https://github.com/RYUNSUN/TIL_.git (fetch)
@@ -110,8 +111,10 @@ $ git clone _____경로______
 ```
 
 - 다운 받기를 원하는 폴더에서 git bash를 열고 위의 명령어를 입력한다.
+
 - 경로는 github 에서 우측에 있는 초록색 버튼을 누르면 나타난다. 
-- 
+
+  
 
 ## 주의!!!
 
