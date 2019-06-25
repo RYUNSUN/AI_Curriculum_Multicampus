@@ -1388,9 +1388,37 @@ def saveExcel() :
     wb.save(xlsName)
     print('csv.excel ok~')
 
+# 파일을 메모리로 로딩하는 함수
+def loadExcel(fname) :
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    fsize = 0
+    fp = open(fname,'r')
+    for _ in fp :
+        fsize += 1
+    inH = inW = int(fsize) # 핵심 코드
+    fp.close()
+    ## 입력영상 메모리 확보 ##
+    inImage=[]
+    inImage=melloc(inH,inW)
+    # 파일 --> 메모리
+    with open(fname,'rb') as rFp :
+        for i in range(inH) :
+            for k in range(inW) :
+                inImage[i][k] = int(ord(rFp.read(1)))
 
+# 파일을 선택해서 메모리로 로딩하는 함수
 def openExcel() :
-    pass
+    global window, canvas, paper, filename, inImage, outImage,inH, inW, outH, outW
+    filename = askopenfilename(parent=window,
+                filetypes=(("CSV 파일", "*.csv"), ("모든 파일", "*.*")))
+    if filename == '' or filename == None :
+        return
+    loadExcel(filename)
+    eqaulImage()
+
+
+
+
 
 
 import xlsxwriter
