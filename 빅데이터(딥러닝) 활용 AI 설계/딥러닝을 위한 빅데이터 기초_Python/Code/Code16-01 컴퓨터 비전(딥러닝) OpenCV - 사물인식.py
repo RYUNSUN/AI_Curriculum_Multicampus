@@ -6,6 +6,7 @@ import os
 import os.path
 from tkinter import messagebox
 from PIL import Image, ImageFilter, ImageEnhance, ImageOps
+import cv2
 
 # 메모리를 할당해서 리스트(참조)를 반환하는 함수
 def malloc(h,w,initValue=0) :
@@ -18,13 +19,22 @@ def malloc(h,w,initValue=0) :
     return retMemory
 
 # 파일을 메모리로 로딩하는 함수
-def loadImageColor(fname) :
+def loadImageColor(fnameOrCvData) : # 파일명 or OpenCV 개체
     global window, canvas, paper, filename, inImage,outImage, inW, inH, outW, outH
-    global photo # pillow 활용시 쓰기 위해
+    global photo, cvPhoto # pillow 활용시 쓰기 위해
     inImage=[]
-    photo = Image.open(fname) # PIL 객체
+    ####################################
+    ## PIL 개체 --> OpenCV 개체로 복사 ##
+    ####################################
+    if type(fnameOrCvData) == str : # 문자열 일때는 filename
+        cvData = cv2.imread(fnameOrCvData) # 파일 --> CV 개체
+    else :
+        cvData = fnameOrCvData
+    cvPhoto = cv2.cvtColor(cvData, cv2.COLOR_BGR2RGB) # 중요! CV 개체
+    photo = Image.fromarray(cvPhoto)# 중요! PIL 객체
     inW = photo.width
     inH = photo.height
+    ###################################
     ## 메모리 확보 ##
     for _ in range(3):
         inImage.append(malloc(inH,inW))
@@ -50,31 +60,56 @@ def openImageColor() :
 
 def displayImageColor() :
     global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
-    if canvas != None:  # 예전에 실행한 적이 있다.
+    if canvas != None : # 예전에 실행한 적이 있다.
         canvas.destroy()
-    VIEW_X = outW;
-    VIEW_Y = outH;
-    step = 1
+    global VIEW_X, VIEW_Y
+    # VIEW_X, VIEW_Y = 512, 512
+    ## 고정된 화면 크기
+    # 가로/세로 비율 계산
+    ratio = outH / outW
+    if ratio < 1:
+        VIEW_X = int(512 * ratio)
+    else:
+        VIEW_X = 512
+    if ratio > 1:
+        VIEW_Y = int(512 * ratio)
+    else:
+        VIEW_Y = 512
 
-    window.geometry(str(int(VIEW_X * 1.2)) + 'x' + str(int(VIEW_Y * 1.2)))  # 벽
-    canvas = Canvas(window, height=VIEW_Y, width=VIEW_X)
-    paper = PhotoImage(height=VIEW_Y, width=VIEW_X)
-    canvas.create_image((VIEW_X // 2, VIEW_Y // 2), image=paper, state='normal')
+    if outH <= VIEW_X :
+        VIEW_X = outH; stepX = 1
+    if outH > VIEW_X :
+        if ratio < 1 :
+            VIEW_X = int(512 * ratio)
+        else :
+            VIEW_X = 512
+        stepX = outH / VIEW_X
+
+    if outW <= VIEW_Y:
+        VIEW_Y = outW; stepY = 1
+    if outW > VIEW_Y:
+        if ratio > 1 :
+            VIEW_Y = int(512 * ratio)
+        else :
+            VIEW_Y = 512
+
+        stepY = outW / VIEW_Y
+
+    window.geometry(str(int(VIEW_Y*1.2)) + 'x' + str(int(VIEW_X*1.2)))  # 벽
+    canvas = Canvas(window, height=VIEW_X, width=VIEW_Y)
+    paper = PhotoImage(height=VIEW_X, width=VIEW_Y)
+    canvas.create_image((VIEW_Y // 2, VIEW_X // 2), image=paper, state='normal')
 
     import numpy
-    rgbStr = ''  # 전체 픽셀의 문자열을 저장
-    for i in numpy.arange(0, outH, step):
+    rgbStr = '' # 전체 픽셀의 문자열을 저장
+    for i in numpy.arange(0,outH, stepX) :
         tmpStr = ''
-        for k in numpy.arange(0, outW, step):
-            i = int(i);
-            k = int(k)
-            r, g, b = outImage[R][i][k], outImage[G][i][k], outImage[B][i][k]
-            tmpStr += ' #%02x%02x%02x' % (r, g, b)
+        for k in numpy.arange(0,outW, stepY) :
+            i = int(i); k = int(k)
+            r , g, b = outImage[R][i][k], outImage[G][i][k], outImage[B][i][k]
+            tmpStr += ' #%02x%02x%02x' % (r,g,b)
         rgbStr += '{' + tmpStr + '} '
     paper.put(rgbStr)
-
-    canvas.pack(expand=1, anchor=CENTER)
-    status.configure(text='이미지 정보:' + str(outW) + 'x' + str(outH))
 
     canvas.pack(expand=1, anchor=CENTER)
     status.configure(text='이미지 정보:' + str(outW) + 'x' + str(outH))
@@ -136,7 +171,7 @@ def addImageColor() :
     ##############################
     ### 진짜 컴퓨터 비전 알고리즘 ###
     ##############################
-    value = askinteger("밝게/어둡게","값 -->",minvalue=-255,maxvalue=255)
+    value = askinteger("밝게/어둡게","값( -->",minvalue=-255,maxvalue=255)
     for RGB in range(3):
         for i in range(inH):
             for k in range(inW):
@@ -206,7 +241,7 @@ def morphImageColor():
     if filename2 == '' or filename2 == None:
         return
     inImage2 = []
-    photo2 = Image.open(filename2)  # PIL 객체, 이미지 바로 전달
+    photo2 = Image.open(filename2)  # PIL 객체
     inW2 = photo2.width;
     inH2 = photo2.height
     ## 메모리 확보
@@ -285,33 +320,10 @@ def zoomOutImageColor() :
 
     displayImageColor()
 
-# 영상 축소 알고리즘 (평균변환)
-def zoomOutImage2Color() :
-    global window, canvas, paper, filename, inImage,outImage, inW, inH, outW, outH
-    scale = askinteger("축소","값 -->",minvalue=2,maxvalue=16)
-    ## 중요! 코드, 출력영상 크기 결정##
-    outH = inH//scale
-    outW = inW//scale
-    ###### 메모리 할당 ###########################
-    outImage = []
-    for _ in range(3):
-        outImage.append(malloc(outH, outW))
-    ###### 진짜 컴퓨터 비전 알고리즘 #####
-    for RGB in range(3) :
-        for i in range(inH) :
-            for k in range(inW) :
-                outImage[RGB][i // scale][k // scale] += inImage[RGB][i][k]
-    for RGB in range(3) :
-        for i in range(outH) :
-            for k in range(outW) :
-                outImage[RGB][i][k] //= (scale * scale)
-    ## 출력
-    displayImageColor()
-
 # 영상 확대 알고리즘
 def zoomInImageColor() :
     global window, canvas, paper, filename, inImage,outImage, inW, inH, outW, outH
-    scale = askinteger("확대","값 -->",minvalue=2,maxvalue=8)
+    scale = askinteger("확대","값 -->",minvalue=2,maxvalue=4)
     ## 중요! 코드, 출력영상 크기 결정##
     outH = inH*scale
     outW = inW*scale
@@ -325,41 +337,6 @@ def zoomInImageColor() :
             for k in range(outW) :
                 outImage[RGB][i][k] = inImage[RGB][i//scale][k//scale]
 
-    displayImageColor()
-
-# 영상 확대 알고리즘(양선형 보간)
-# 깨끗하게 확대되기 때문에 추후에 딥러닝하면 좋은 결과가 나올 수 있음
-def zoomInImage2Color() :
-    global window, canvas, paper, filename, inImage,outImage, inW, inH, outW, outH
-    scale = askinteger("확대","값 -->",minvalue=2,maxvalue=8)
-    ## 중요! 코드, 출력영상 크기 결정##
-    outH = inH*scale
-    outW = inW*scale
-    ###### 메모리 할당 ###########################
-    outImage = []
-    for _ in range(3):
-        outImage.append(malloc(outH-1, outW-1))
-    ###### 진짜 컴퓨터 비전 알고리즘 #####
-    rH,rW,iH, iW = [0]*4 # 실수 위치(rH,rW) 및 실수 위치와 가까운 정수 위치(iH, iW)
-    x,y = 0,0 # 실수와 정수의 차이값
-    C1,C2,C3,C4 = [0] * 4 # 결정할 위치(N)의 상하좌우 픽셀
-    for RGB in range(3):
-        for i in range(outH-1) :
-            for k in range(outW-1) :
-                rH = i / scale
-                rW = k / scale
-                iH = int(rH)
-                iW = int(rW)
-                x = rW - iW
-                y = rH - iH
-                if 0 <= iH < inH-1 and 0 <= iW < inW-1 :
-                    C1 = inImage[RGB][iH][iW]
-                    C2 = inImage[RGB][iH][iW+1]
-                    C3 = inImage[RGB][iH+1][iW+1]
-                    C4 = inImage[RGB][iH+1][iW]
-                    newValue = C1 * (1-y) * (1-x) + C2 * (1-y) * x + C3*y*x + C4 * y * (1-x)
-                    outImage[RGB][i][k] = int(newValue)
-    ## 출력
     displayImageColor()
 
 ## 마우스 화면이동 알고리즘
@@ -894,7 +871,7 @@ import matplotlib.pyplot as plt
 def histoImageColor() :
     global window, canvas, paper, filename, inImage,outImage, inW, inH, outW, outH
     rCountList = [0] * 256
-    gCountList = [0] * 256
+    gCountList =[0] * 256
     bCountList = [0] * 256
 
     for i in range(inH) :
@@ -909,55 +886,20 @@ def histoImageColor() :
         for k in range(outW) :
             bCountList[inImage[B][i][k]] += 1
 
-    plt.plot(rCountList,color='r')
-    plt.plot(gCountList,color='g')
-    plt.plot(bCountList,color='b')
+    plt.plot(rCountList)
+    plt.plot(gCountList)
+    plt.plot(bCountList)
     plt.show()
-
-# 히스토그램
-import matplotlib.pyplot as plt
-def histoImage2Color() :
-    global window, canvas, paper, filename, inImage,outImage, inW, inH, outW, outH
-    outCountList =[0]*256
-    normalCountList =[0]*256
-
-    #빈도수 계산
-    for i in range(outH) :
-        for k in range(outW) :
-            outCountList[outImage[i][k]] += 1
-    maxVal = max(outCountList)
-    minVal = min(outCountList)
-    High = 256
-
-    # 정규화 = (카운트 값 - 최소값) * High / (최대값 - 최소값)
-    for i in range(len(outCountList)) :
-        normalCountList[i] = (outCountList[i] - minVal) * High / (maxVal-minVal)
-
-    ## 서브 윈도창 생성 후 출력
-    subWindow = Toplevel(window) # window의 하위 window 생성
-    subWindow.geometry("256x256")
-    subCanvas = Canvas(subWindow, width = 256, height = 256)
-    subPaper = PhotoImage(width = 256, height = 256)
-    subCanvas.create_image((256//2,256//2),image = subPaper, state = "normal")
-
-    for i in range(len(normalCountList)) :
-        for k in range(int(normalCountList[i])) :
-            data = 0
-            subPaper.put('#%02x%02x%02x' % (data,data,data), (i, 255-k))
-    subCanvas.pack(expand = 1 , anchor = CENTER)
-    subWindow.mainloop()
-
 
 # 파일을 메모리로 로딩하는 함수
 def loadCSVColor(fname) :
     global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
-    row_list= []
-    with open(fname, 'r') as rFp:
-        for row_list in rFp :
-            row, col = list(map(int, row_list.strip().split(',')))[0:2]
-            inH = row+1
-            inW = col+1
-
+    fsize = 0
+    fp = open(fname,'r')
+    for _ in fp :
+        fsize += 1
+    inH = inW = int(math.sqrt(fsize/3)) # 핵심 코드
+    fp.close()
     ## 입력영상 메모리 확보 ##
     inImage=[]
     for _ in range(3):
@@ -965,10 +907,10 @@ def loadCSVColor(fname) :
     # 파일 --> 메모리
     with open(fname, 'r') as rFp:
         for row_list in rFp :
-            row, col, r, g, b, = list(map(int,row_list.strip().split(',')))
-            inImage[R][row][col] = r
-            inImage[G][row][col] = g
-            inImage[B][row][col] = b
+            RGB, row, col, value = list(map(int,row_list.strip().split(',')))
+            inImage[RGB][row][col] = value
+
+
 
 # 파일을 선택해서 메모리로 로딩하는 함수
 def openCSVColor() :
@@ -992,12 +934,11 @@ def saveCSVColor() :
         return
     with open (saveFp.name,'w',newline='') as wFp :
         csvWriter = csv.writer(wFp)
-
-
-        for i in range(outH):
-            for k in range(outW):
-               row_list = [i, k, outImage[R][i][k],outImage[G][i][k],outImage[B][i][k]]
-               csvWriter.writerow(row_list)
+        for RGB in range(3):
+            for i in range(outH):
+                for k in range(outW):
+                   row_list = [RGB,i, k, outImage[RGB][i][k]]
+                   csvWriter.writerow(row_list)
 
     print('csv.save ok~')
 
@@ -1012,80 +953,16 @@ def saveExcelColor() :
     xlsName = saveFp.name
     sheetName = os.path.basename(filename)
     wb = xlwt.Workbook()
-    ws_r = wb.add_sheet('first_sheet')
-    ws_g = wb.add_sheet('second_sheet')
-    ws_b = wb.add_sheet('third_sheet')
+    ws_1 = wb.add_sheet(sheetName)
+    ws = wb.add_sheet(sheetName)
+    ws = wb.add_sheet(sheetName)
 
     for i in range(outH) :
         for k in range(outW) :
-            ws_r.write(i, k, outImage[R][i][k])
-            ws_g.write(i, k, outImage[G][i][k])
-            ws_b.write(i, k, outImage[B][i][k])
+            ws.write(i, k, outImage[i][k])
 
     wb.save(xlsName)
-    print('excel.save ok~')
-
-
-import xlrd
-def openExcelColor() :
-    global window, canvas, paper, filename, inImage, outImage,inH, inW, outH, outW
-    filename = askopenfilename(parent=window,
-                filetypes=(("엑셀 파일","*.xls;*.xlsx"), ("모든파일", "*.*")))
-    if filename == '' or filename == None :
-        return
-    workbook = xlrd.open_workbook(filename)
-    wsList = workbook.sheets()
-    # print(wsList.cell_value(0,1))
-    inW = wsList[0].nrows
-    inH = wsList[0].ncols
-    ## 입력영상 메모리 확보 ##
-    inImage=[]
-    for _ in range(3):
-        inImage.append(malloc(inH, inW))
-
-    ## 입력영상 메모리 확보 ##
-    for i in range(inH):
-        for k in range(inW):
-            inImage[R][i][k] = int(wsList[0].cell_value(i,k))
-            inImage[G][i][k] = int(wsList[1].cell_value(i,k))
-            inImage[B][i][k] = int(wsList[2].cell_value(i,k))
-    equalImageColor()
-
-import xlsxwriter
-def saveExcelArtColor() :
-    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
-    saveFp = asksaveasfile(parent=window, mode='wb',
-                           defaultextension='*.xls', filetypes=(("XLS 파일", "*.xls"), ("모든 파일", "*.*")))
-    if saveFp == '' or saveFp == None:
-        return
-    xlsName = saveFp.name
-    sheetName = os.path.basename(filename)
-
-    wb = xlsxwriter.Workbook(xlsName)
-    ws = wb.add_worksheet(sheetName)
-
-    ws.set_column(0, outW-1, 1.0) # 약 0.34
-    for i in range(outH) :
-        ws.set_row(i, 9.5) # 약 0.35
-
-    for i in range(outH) :
-        for k in range(outW) :
-            data_r = outImage[R][i][k]
-            data_g = outImage[G][i][k]
-            data_b = outImage[B][i][k]
-            # data 값으로 셀의 배경색을 조절 #000000 ~ #FFFFFF
-            if data_r > 15 and data_g > 15 and data_b > 15 :
-                hexStr = '#' + hex(data_r)[2:] +hex(data_g)[2:] + hex(data_b)[2:]
-            else :
-                hexStr = '#' + '0' + hex(data_r)[2:] +'0' +hex(data_g)[2:] + '0' +hex(data_b)[2:]
-            # 셀의 포맷을 준비
-            cell_format = wb.add_format()
-            cell_format.set_bg_color(hexStr)
-            ws.write(i, k, '', cell_format)
-
-    wb.close()
-    print('Excel Art. save OK~')
-
+    print('csv.save ok~')
 
 import struct
 ## 임시 경로에 outImage를 저장하기.
@@ -1112,6 +989,34 @@ def saveTempImage():
     savePhoto.save(saveFp.name)
     saveFp.close()
     return saveFp
+
+
+
+# def findStat(fname):
+#     # 파일 열고, 읽기.
+#     fsize = os.path.getsize(fname)  # 파일의 크기(바이트)
+#     inH = inW = int(math.sqrt(fsize))  # 핵심 코드
+#     ## 입력영상 메모리 확보 ##
+#     inImage = []
+#     inImage = malloc(inH, inW)
+#     # 파일 --> 메모리
+#     with open(fname, 'rb') as rFp:
+#         for i in range(inH):
+#             for k in range(inW):
+#                 inImage[i][k] = int(ord(rFp.read(1)))
+#     sum = 0
+#     for i in range(inH):
+#         for k in range(inW):
+#             sum += inImage[i][k]
+#     avg = sum // (inW * inH)
+#     maxVal = minVal = inImage[0][0]
+#     for i in range(inH):
+#         for k in range(inW):
+#             if inImage[i][k] < minVal:
+#                 minVal = inImage[i][k]
+#             elif inImage[i][k] > maxVal:
+#                 maxVal = inImage[i][k]
+#     return avg, maxVal, minVal
 
 
 import pymysql
@@ -1211,6 +1116,410 @@ def loadMysqlColor() :
     cur.close()
     con.close()
 
+######################################
+##### OpenCV 용 컴퓨터 비전/딥러닝 ####
+######################################
+def toColorOutArray(pillowPhoto) :
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    ###### 메모리 할당 ################
+    outH = pillowPhoto.height; outW = pillowPhoto.width
+    outImage = [];
+    for _ in range(3):
+        outImage.append(malloc(outH, outW))
+    photoRGB = pillowPhoto.convert('RGB')
+    for i in range(outH) :
+        for k in range(outW) :
+            r,g,b = photoRGB.getpixel((k,i))
+            outImage[R][i][k],outImage[G][i][k],outImage[B][i][k]=r,g,b
+    displayImageColor()
+
+def embossOpenCV():
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None :
+        return
+
+    cvPhoto2 = cvPhoto[:]
+    mask = np.zeros((3,3),np.float32)
+    mask[0][0] = -1; mask[2][2] = 1;
+    cvPhoto2 = cv2.filter2D(cvPhoto2,-1,mask)
+    cvPhoto2 += 127
+    photo2 = Image.fromarray(cvPhoto2) #PIL용 photo2로 보내서 출력
+    toColorOutArray(photo2)
+
+def greyscaleOpenCV():
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None :
+        return
+    ##이 부분이 OpenCV 처리 부분######################################
+    cvPhoto2 = cvPhoto[:]
+    cvPhoto2 = cv2.cvtColor(cvPhoto2, cv2.COLOR_RGB2GRAY)
+    photo2 = Image.fromarray(cvPhoto2) #PIL용 photo2로 보내서 출력
+    ################################################################
+    toColorOutArray(photo2)
+
+def blurOpenCV():
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None :
+        return
+    ##이 부분이 OpenCV 처리 부분######################################
+    mSize = askinteger("블러링","마스크 크기:") # 마스크 크기는 홀수만 가능
+    cvPhoto2 = cvPhoto[:]
+    mask = np.ones((mSize, mSize), np.float32) / (mSize*mSize)
+    cvPhoto2 = cv2.filter2D(cvPhoto2, -1, mask)
+    photo2 = Image.fromarray(cvPhoto2) #PIL용 photo2로 보내서 출력
+    ################################################################
+    toColorOutArray(photo2)
+
+def rotateOpenCV():
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None :
+        return
+    ##이 부분이 OpenCV 처리 부분######################################
+    angle = askinteger("회전","각도: ")
+    cvPhoto2 = cvPhoto[:]
+    rotate_matrix = cv2.getRotationMatrix2D((outH//2, outW//2),angle,1) # 중앙점, 각도, 스케일(확대)
+    cvPhoto2 = cv2.warpAffine(cvPhoto2, rotate_matrix, (outH, outW))
+    photo2 = Image.fromarray(cvPhoto2) #PIL용 photo2로 보내서 출력
+    ################################################################
+    toColorOutArray(photo2)
+
+def zoomInOpenCV():
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    ###이 부분이 OpenCV 처리 부분##########################
+    scale = askfloat("확대/축소", "배수:")
+    cvPhoto2 = cvPhoto[:]
+    cvPhoto2 = cv2.resize(cvPhoto2, None, fx=scale, fy=scale)
+    photo2 = Image.fromarray(cvPhoto2)
+    ###################################################
+    toColorOutArray(photo2)
+
+def waveHorOpenCV():
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    ##이 부분이 OpenCV 처리 부분######################################
+    cvPhoto2 = np.zeros(cvPhoto.shape, dtype=cvPhoto.dtype)
+    for i in range(inH) :
+        for k in range(inW) :
+            oy = int(15.0 * math.sin(2*3.14*k / 180))
+            ox = 0
+            if i+oy < inH :
+                cvPhoto2[i][k] = cvPhoto [(i+oy) % inH][k]
+            else :
+                cvPhoto2[i][k] = 0
+    photo2 = Image.fromarray(cvPhoto2)  # PIL용 photo2로 보내서 출력
+    ################################################################
+    toColorOutArray(photo2)
+
+def waveVirOpenCV():
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    ###이 부분이 OpenCV 처리 부분##########################
+    cvPhoto2 = np.zeros(cvPhoto.shape, dtype=cvPhoto.dtype)
+    for i in range(inH):
+        for k in range(inW):
+            ox = int(25.0 * math.sin(2 * 3.14 * i / 180))
+            oy = 0
+            if k + ox < inW:
+                cvPhoto2[i][k] = cvPhoto[i][(k + ox) % inW]
+            else:
+                cvPhoto2[i][k] = 0
+    photo2 = Image.fromarray(cvPhoto2)
+    ###################################################
+    toColorOutArray(photo2)
+
+
+def cartoonOpenCV():
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    ##이 부분이 OpenCV 처리 부분######################################
+    cvPhoto2 = cvPhoto[:]
+    cvPhoto2 = cv2.cvtColor(cvPhoto2, cv2.COLOR_RGB2GRAY)
+    cyPhoto2 = cv2.medianBlur(cvPhoto2, 7)
+    edges = cv2.Laplacian(cvPhoto2, cv2.CV_8U, ksize = 5)
+    ret, mask = cv2.threshold(edges, 100, 255, cv2.THRESH_BINARY_INV)
+    cvPhoto2 = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
+    photo2 = Image.fromarray(cvPhoto2)  # PIL용 photo2로 보내서 출력
+    ################################################################
+    toColorOutArray(photo2)
+
+def faceDetectOpenCV() :
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    ###이 부분이 OpenCV 처리 부분##########################
+    face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_alt.xml")
+    cvPhoto2 = cvPhoto[:]
+    grey = cv2.cvtColor(cvPhoto2, cv2.COLOR_RGB2GRAY)
+
+    ## 얼굴 찾기
+    face_rects = face_cascade.detectMultiScale(grey, 1.1, 5)
+    print(face_rects)
+    for (x, y, w, h) in face_rects:
+        cv2.rectangle(cvPhoto2, (x, y), (x + w, y + w), (0, 255, 0), 3)
+
+    photo2 = Image.fromarray(cvPhoto2)
+    ###################################################
+    toColorOutArray(photo2)
+
+def hanibalOpenCV() :
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    ###이 부분이 OpenCV 처리 부분##########################
+    face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_alt.xml")
+    faceMask = cv2.imread("C:/images/images(ML)/mask_hannibal.png")
+    h_mask, w_mask = faceMask.shape[:2]
+    cvPhoto2 = cvPhoto[:]
+    grey = cv2.cvtColor(cvPhoto2, cv2.COLOR_RGB2GRAY)
+
+    ## 얼굴 찾기
+    face_rects = face_cascade.detectMultiScale(grey, 1.1, 5)
+    for (x, y, w, h) in face_rects:
+        if h> 0 and w > 0 :
+            x = int(x + 0.1*w); y = int(y+0.4*h)
+            w = int(0.8 *w) ; h = int(0.8*h)
+            cvPhoto2_2 = cvPhoto2[y:y+h, x:x+w]
+            faceMask_small = cv2.resize(faceMask, (w,h), interpolation=cv2.INTER_AREA)
+            grey_mask = cv2.cvtColor(faceMask_small, cv2.COLOR_RGB2GRAY)
+            ret, mask = cv2.threshold(grey_mask, 50, 255, cv2.THRESH_BINARY)
+            mask_inv = cv2.bitwise_not(mask)
+            maskedFace = cv2.bitwise_and(faceMask_small, faceMask_small, mask=mask)
+            maskedFrame = cv2.bitwise_and(cvPhoto2_2, cvPhoto2_2,mask_inv)
+            cvPhoto2[y:y+h, x:x+w] = cv2.add(maskedFace, maskedFrame)
+    photo2 = Image.fromarray(cvPhoto2)
+    ###################################################
+    toColorOutArray(photo2)
+
+def catFaceDetectOpenCV() :
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    ###이 부분이 OpenCV 처리 부분##########################
+    face_cascade = cv2.CascadeClassifier("haarcascade_frontalcatface.xml")
+    cvPhoto2 = cvPhoto[:]
+    grey = cv2.cvtColor(cvPhoto2, cv2.COLOR_RGB2GRAY)
+
+    ## 얼굴 찾기
+    face_rects = face_cascade.detectMultiScale(grey, 1.1, 5)
+    print(face_rects)
+    for (x, y, w, h) in face_rects:
+        cv2.rectangle(cvPhoto2, (x, y), (x + w, y + w), (0, 255, 0), 3)
+
+    photo2 = Image.fromarray(cvPhoto2)
+    ###################################################
+    toColorOutArray(photo2)
+
+def catHanibalOpenCV() :
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    ###이 부분이 OpenCV 처리 부분##########################
+    face_cascade = cv2.CascadeClassifier("haarcascade_frontalcatface.xml")
+    faceMask = cv2.imread("C:/images/images(ML)/mask_hannibal.png")
+    h_mask, w_mask = faceMask.shape[:2]
+    cvPhoto2 = cvPhoto[:]
+    grey = cv2.cvtColor(cvPhoto2, cv2.COLOR_RGB2GRAY)
+
+    ## 얼굴 찾기
+    face_rects = face_cascade.detectMultiScale(grey, 1.1, 5)
+    for (x, y, w, h) in face_rects:
+        if h> 0 and w > 0 :
+            x = int(x + 0.1*w); y = int(y+0.4*h)
+            w = int(0.8 *w) ; h = int(0.8*h)
+            cvPhoto2_2 = cvPhoto2[y:y+h, x:x+w]
+            faceMask_small = cv2.resize(faceMask, (w,h), interpolation=cv2.INTER_AREA)
+            grey_mask = cv2.cvtColor(faceMask_small, cv2.COLOR_RGB2GRAY)
+            ret, mask = cv2.threshold(grey_mask, 50, 255, cv2.THRESH_BINARY)
+            mask_inv = cv2.bitwise_not(mask)
+            maskedFace = cv2.bitwise_and(faceMask_small, faceMask_small, mask=mask)
+            maskedFrame = cv2.bitwise_and(cvPhoto2_2, cvPhoto2_2,mask_inv)
+            cvPhoto2[y:y+h, x:x+w] = cv2.add(maskedFace, maskedFrame)
+    photo2 = Image.fromarray(cvPhoto2)
+    ###################################################
+    toColorOutArray(photo2)
+
+def sunglassOpenCV() :
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    ###이 부분이 OpenCV 처리 부분##########################
+    face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_alt.xml")
+    eye_cascade = cv2.CascadeClassifier("haarcascade_eye.xml")
+    sunglass = cv2.imread("C:/images/images(ML)/eye_sunglasses_1.jpg")
+    cvPhoto2 = cvPhoto[:]
+    grey = cv2.cvtColor(cvPhoto2, cv2.COLOR_RGB2GRAY)
+
+    ## 얼굴 찾기
+    # centers = []
+    face_rects = face_cascade.detectMultiScale(grey, 1.1, 5)
+    for (x, y, w, h) in face_rects:
+        centers=[]
+        roi_grey = grey[y:y+h, x:x+w]
+        roi_color = cvPhoto2[y:y+h, x:x+w]
+        eyes = eye_cascade.detectMultiScale(roi_grey)
+        for (x_eye,y_eye,w_eye,h_eye)in eyes :
+            # cv2.rectangle(roi_color, (x_eye,y_eye), (x_eye+w_eye,y_eye+h_eye), (0,255,0), 3)
+            centers.append((x + int(x_eye + 0.5*w_eye), y + int(y_eye + 0.5*h_eye)))
+
+        if len(centers) > 0:
+            print(centers)
+            print(centers[0][1])
+            sunglass_width = 2.12*abs(centers[1][0]-centers[0][0])
+            overlay_img =np.ones(cvPhoto2.shape, np.uint8) * 255
+            h, w = sunglass.shape[:2]
+            scaling_factor = sunglass_width / w
+            overlay_sunglasses = cv2.resize(sunglass, None, fx=scaling_factor,
+                                            fy=scaling_factor, interpolation=cv2.INTER_AREA)
+
+            x = centers[0][0] if centers[0][0] < centers[1][0] else centers[1][0]
+            x -= int(0.26 * overlay_sunglasses.shape[1])
+            y += int(0.85 * overlay_sunglasses.shape[0])
+            h, w = overlay_sunglasses.shape[:2]
+            overlay_img[y:y + h, x:x + w] = overlay_sunglasses
+
+            # create mask
+            grey_sunglass = cv2.cvtColor(overlay_img, cv2.COLOR_RGB2GRAY)
+            ret, mask = cv2.threshold(grey_sunglass, 110, 255, cv2.THRESH_BINARY)
+            mask_inv = cv2.bitwise_not(mask)
+            maskedFace = cv2.bitwise_and(cvPhoto2, cvPhoto2, mask=mask)
+            maskedFrame = cv2.bitwise_and(overlay_img, overlay_img,mask = mask_inv)
+            cvPhoto2 = cv2.add(maskedFace, maskedFrame)
+    photo2 = Image.fromarray(cvPhoto2)
+    ###################################################
+    toColorOutArray(photo2)
+
+def deep1OpenCV() :
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto
+    if inImage == None:
+        return
+    cvPhoto2 = cvPhoto[:] #OpenCV 개체
+    ######### 고정해서 쓸 코드 ############
+    CONF_VALUE= 0.2 # args["confidence"] : 샘플 돌렸을 때 기본 값이 0.2
+    CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
+        "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
+        "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
+        "sofa", "train", "tvmonitor"]
+    COLORS = np.random.uniform(0, 255, size=(len(CLASSES), 3))
+    net = cv2.dnn.readNetFromCaffe("MobileNetSSD_deploy.prototxt.txt", "MobileNetSSD_deploy.caffemodel")
+    image = cvPhoto2
+    (h, w) = image.shape[:2]
+    blob = cv2.dnn.blobFromImage(cv2.resize(image, (300, 300)), 0.007843, (300, 300), 127.5)
+    net.setInput(blob)
+    detections = net.forward()
+
+    # loop over the detections
+    for i in np.arange(0, detections.shape[2]):
+        # extract the confidence (i.e., probability) associated with the
+        # prediction
+        confidence = detections[0, 0, i, 2]
+        if confidence > CONF_VALUE:
+            idx = int(detections[0, 0, i, 1])
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            (startX, startY, endX, endY) = box.astype("int")
+            # display the prediction
+            label = "{}: {:.2f}%".format(CLASSES[idx], confidence * 100)
+            print("[INFO] {}".format(label))
+            cv2.rectangle(image, (startX, startY), (endX, endY),
+                COLORS[idx], 2)
+            y = startY - 15 if startY - 15 > 15 else startY + 15
+            cv2.putText(image, label, (startX, y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx], 2)
+    cvPhoto2 = image
+#########################
+    # 화면 출력
+    photo2 = Image.fromarray(cvPhoto2)
+    toColorOutArray(photo2)
+
+def deep2OpenCV() :
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto, frame
+    filename = askopenfilename(parent=window, filetypes=(("동영상 파일", "*.mp4"), ("모든파일", "*.*")))
+    if filename == '' or filename == None:
+        return
+    cap = cv2.VideoCapture(filename) # filename 대신 0쓰면 연결된 카메라의 실시간 영상 출력
+    s_factor = 0.5 # 화면 크기 비율, 개인적으로 조절 가능
+
+######### 고정해서 쓸 코드 ############
+    frameCount = 0 # 영상의 장면 수
+    while TRUE : # 반복 수 모를 때
+        ret, frame = cap.read() # ret:return을 나타내는 것으로 T,F 값 출력
+        if not ret : # 영상이 끝나면 멈춰라
+            break
+        frameCount += 1
+        if frameCount % 8 == 0 : # 8은 화면 속도 조절 화면을 뛰어넘기는 초 값으로 너무 느리면 값을 키우면 되지만 장면을 많이 뛰어넘길 수 있음.
+            frame = cv2.resize(frame,None,fx = s_factor, fy=s_factor, interpolation=cv2.INTER_AREA) # 한장씩 캡처한 것
+            ######### 고정해서 쓸 코드 ############
+            CONF_VALUE= 0.2 # args["confidence"] : 샘플 돌렸을 때 기본 값이 0.2
+            CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
+                "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
+                "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
+                "sofa", "train", "tvmonitor"]
+            COLORS = np.random.uniform(0, 255, size=(len(CLASSES), 3))
+            net = cv2.dnn.readNetFromCaffe("MobileNetSSD_deploy.prototxt.txt", "MobileNetSSD_deploy.caffemodel")
+            image = frame
+            (h, w) = image.shape[:2]
+            blob = cv2.dnn.blobFromImage(cv2.resize(image, (300, 300)), 0.007843, (300, 300), 127.5)
+            net.setInput(blob)
+            detections = net.forward()
+
+            # loop over the detections
+            for i in np.arange(0, detections.shape[2]):
+                # extract the confidence (i.e., probability) associated with the
+                # prediction
+                confidence = detections[0, 0, i, 2]
+                if confidence > CONF_VALUE:
+                    idx = int(detections[0, 0, i, 1])
+                    box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+                    (startX, startY, endX, endY) = box.astype("int")
+                    # display the prediction
+                    label = "{}: {:.2f}%".format(CLASSES[idx], confidence * 100)
+                    print("[INFO] {}".format(label))
+                    cv2.rectangle(image, (startX, startY), (endX, endY),
+                        COLORS[idx], 2)
+                    y = startY - 15 if startY - 15 > 15 else startY + 15
+                    cv2.putText(image, label, (startX, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx], 2)
+            frame = image
+        #########################
+            cv2.imshow('Deep Learning', frame)
+            c = cv2.waitKey(1)
+            if c == 27 : # ESC 키
+                break
+            elif c == ord('c') or c == ord('C') :
+                captureVideo()
+                window.update() # 캡처 화면을 툴에 출력 시켜라
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+def captureVideo() :
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    global photo, cvPhoto, frame
+    loadImageColor(frame) # frame 자체를 load 시켜서 로딩
+    equalImageColor()
+
 
 #######################
 #### 전역변수 선언부 ####
@@ -1226,19 +1535,17 @@ VIEW_X, VIEW_Y = 512,512 #화면에 보일 크기 (출력용)
 ####################
 #### 메인 코드부 ####
 ####################
-import tkinter as tk
-from tkinter import ttk
-window = tk.Tk()
-window.title('컴퓨터 비젼 (딥러닝-칼라) ver 0.1')
-window.geometry("600x600")
+window = Tk()
+window.title('컴퓨터 비젼(OpenCV) ver 0.4')
+window.geometry("500x500")
 
-status = tk.Label(window, text = '이미지 정보:',bd = 1 , relief = SUNKEN, anchor = W, fg="black")
+status = Label(window, text = '이미지 정보:',bd = 1 , relief = SUNKEN, anchor = W)
 status.pack(side = BOTTOM,fill=X)
 
-mainMenu = tkinter.Menu(window)
+mainMenu = Menu(window)
 window.config(menu=mainMenu)
 
-fileMenu = tkinter.Menu(mainMenu,relief = "groove")
+fileMenu = Menu(mainMenu)
 mainMenu.add_cascade(label='파일', menu=fileMenu)
 fileMenu.add_command(label='파일 열기', command=openImageColor)
 fileMenu.add_separator()
@@ -1258,11 +1565,11 @@ comVisionMenu1.add_command(label='채도조절(HSV)', command=addSValueHSV)
 comVisionMenu2 = Menu(mainMenu)
 mainMenu.add_cascade(label='통계', menu=comVisionMenu2 )
 comVisionMenu2.add_command(label='이진화', command=binaryImageColor)
-comVisionMenu2.add_command(label='축소(평균변환)', command=zoomOutImage2Color)
-comVisionMenu2.add_command(label='확대(양선형보간변환)', command=zoomInImage2Color)
-comVisionMenu2.add_separator()
+# comVisionMenu2.add_command(label='축소(평균변환)', command=zoomOutImage2)
+# comVisionMenu2.add_command(label='확대(양선형보간변환)', command=zoomInImage2)
+# comVisionMenu2.add_separator()
 comVisionMenu2.add_command(label='히스토그램', command=histoImageColor)
-comVisionMenu2.add_command(label='히스토그램(내꺼)', command=histoImage2Color)
+# comVisionMenu2.add_command(label='히스토그램(내꺼)', command=histoImageColor2)
 # comVisionMenu2.add_command(label='명암대비', command=stretchImage)
 # comVisionMenu2.add_command(label='End-In탐색', command=endinImage)
 # comVisionMenu2.add_command(label='히스토그램 평활화', command=histoEqualImage)
@@ -1276,7 +1583,6 @@ comVisionMenu3.add_command(label='확대', command=zoomInImageColor)
 comVisionMenu3.add_command(label='이동', command=moveImageColor)
 comVisionMenu3.add_command(label='회전1', command=rotateImageColor)
 comVisionMenu3.add_command(label='회전2(중심, 역방향)', command=rotateImageColor2)
-
 
 comVisionMenu4 = Menu(mainMenu)
 mainMenu.add_cascade(label='화소영역 처리', menu=comVisionMenu4)
@@ -1299,8 +1605,34 @@ comVisionMenu5.add_separator()
 comVisionMenu5.add_command(label='CSV 열기', command=openCSVColor)
 comVisionMenu5.add_command(label='CSV 형식으로 저장', command=saveCSVColor)
 comVisionMenu5.add_separator()
-comVisionMenu5.add_command(label='엑셀 열기', command=openExcelColor)
+# comVisionMenu5.add_command(label='엑셀 열기', command=openExcel)
 comVisionMenu5.add_command(label='엑셀 형식으로 저장', command=saveExcelColor)
-comVisionMenu5.add_command(label='엑셀 아트로 저장', command=saveExcelArtColor)
+# comVisionMenu5.add_command(label='엑셀 아트로 저장', command=saveExcelArt)
+
+openCVMenu = Menu(mainMenu)
+mainMenu.add_cascade(label='OpenCV 딥러닝', menu=openCVMenu)
+openCVMenu.add_command(label='엠보싱(OpenCV)', command=embossOpenCV)
+openCVMenu.add_command(label='그레이스케일(OpenCV)', command=greyscaleOpenCV)
+openCVMenu.add_command(label='블러링(OpenCV)', command= blurOpenCV)
+openCVMenu.add_separator()
+openCVMenu.add_command(label='회전', command=rotateOpenCV)
+openCVMenu.add_command(label='확대', command= zoomInOpenCV)
+openCVMenu.add_separator()
+openCVMenu.add_command(label='수평 웨이브', command = waveHorOpenCV)
+openCVMenu.add_command(label='수직 웨이브', command = waveVirOpenCV)
+openCVMenu.add_separator()
+openCVMenu.add_command(label='카툰화', command = cartoonOpenCV)
+# openCVMenu.add_command(label='블렌딩', command = blendOpenCV)
+openCVMenu.add_separator()
+openCVMenu.add_command(label='얼굴인식(머신러닝)', command =faceDetectOpenCV)
+openCVMenu.add_command(label='한니발 마스크(머신러닝)', command = hanibalOpenCV)
+openCVMenu.add_separator()
+openCVMenu.add_command(label='냥이 얼굴(머신러닝)', command =catFaceDetectOpenCV)
+openCVMenu.add_command(label='냥이 마스크(머신러닝)', command = catHanibalOpenCV)
+openCVMenu.add_separator()
+openCVMenu.add_command(label='선글라스(머신러닝)', command =sunglassOpenCV)
+openCVMenu.add_separator()
+openCVMenu.add_command(label='사물 인식(딥러닝)-정지영상', command =deep1OpenCV)
+openCVMenu.add_command(label='사물 인식(딥러닝)-동영상', command =deep2OpenCV)
 
 window.mainloop()

@@ -1388,44 +1388,33 @@ def saveExcel() :
     wb.save(xlsName)
     print('csv.excel ok~')
 
-# 파일을 메모리로 로딩하는 함수
-def loadExcel(fname) :
-    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
-    fsize = 0
-    fp = open(fname,'r')
-    for _ in fp :
-        fsize += 1
-    inH = inW = int(fsize) # 핵심 코드
-    fp.close()
-    ## 입력영상 메모리 확보 ##
-    inImage=[]
-    inImage=melloc(inH,inW)
-    # 파일 --> 메모리
-    with open(fname,'rb') as rFp :
-        for i in range(inH) :
-            for k in range(inW) :
-                inImage[i][k] = int(ord(rFp.read(1)))
-
-# 파일을 선택해서 메모리로 로딩하는 함수
+import xlrd
 def openExcel() :
     global window, canvas, paper, filename, inImage, outImage,inH, inW, outH, outW
     filename = askopenfilename(parent=window,
-                filetypes=(("CSV 파일", "*.csv"), ("모든 파일", "*.*")))
+                filetypes=(("엑셀 파일","*.xls;*.xlsx"), ("모든파일", "*.*")))
     if filename == '' or filename == None :
         return
-    loadExcel(filename)
+    workbook = xlrd.open_workbook(filename)
+    wsList = workbook.sheets()[0]
+    print(wsList.cell_value(0,1))
+    inW = wsList.nrows
+    inH = wsList.ncols
+    ## 입력영상 메모리 확보 ##
+    inImage=[]
+    inImage=melloc(inH,inW)
+    ## 입력영상 메모리 확보 ##
+    for i in range(inH):
+        for k in range(inW):
+            inImage[i][k] = int(wsList.cell_value(i,k))
+
     eqaulImage()
-
-
-
-
-
 
 import xlsxwriter
 def saveExcelArt() :
-    global window, canvas, paper, filename, inImage, outImage, inW, inH, outW, outH
-    saveFp = asksaveasfile(parent=window, mode='wb', defaultextension='*.csv'
-                           , filetypes=(("XLS 파일", "*.xls"), ("모든파일", "*.*")))
+    global window, canvas, paper, filename, inImage, outImage, inH, inW, outH, outW
+    saveFp = asksaveasfile(parent=window, mode='wb',
+                           defaultextension='*.xls', filetypes=(("XLS 파일", "*.xls"), ("모든 파일", "*.*")))
     if saveFp == '' or saveFp == None:
         return
     xlsName = saveFp.name
@@ -1434,7 +1423,7 @@ def saveExcelArt() :
     wb = xlsxwriter.Workbook(xlsName)
     ws = wb.add_worksheet(sheetName)
 
-    ws.set_column(0, outW-1,1.0) # 폭 조절 (약 0.34)
+    ws.set_column(0, outW-1, 1.0) # 약 0.34
     for i in range(outH) :
         ws.set_row(i, 9.5) # 약 0.35
 
@@ -1443,15 +1432,16 @@ def saveExcelArt() :
             data = outImage[i][k]
             # data 값으로 셀의 배경색을 조절 #000000 ~ #FFFFFF
             if data > 15 :
-                hexStr = '#' + hex(data)[2:] *3 # 앞의 2글자를 떼기 위해
+                hexStr = '#' + hex(data)[2:] * 3
             else :
-                hexStr = '#' + ('0' + hex(data)[2:]) * 3  # 앞의 2글자를 떼기 위해
-            # 셀의 포맷 준비
+                hexStr = '#' + ('0' + hex(data)[2:]) * 3
+            # 셀의 포맷을 준비
             cell_format = wb.add_format()
             cell_format.set_bg_color(hexStr)
-            ws.write(i, k,'',cell_format)
+            ws.write(i, k, '', cell_format)
+
     wb.close()
-    print('Excel Art.save ok~')
+    print('Excel Art. save OK~')
 
 
 #########################
