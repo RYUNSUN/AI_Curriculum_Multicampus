@@ -918,32 +918,44 @@ def histoImageColor() :
 import matplotlib.pyplot as plt
 def histoImage2Color() :
     global window, canvas, paper, filename, inImage,outImage, inW, inH, outW, outH
-    outCountList =[0]*256
-    normalCountList =[0]*256
-
+    outCountList =[[0]*256 for _ in range(3)]
+    normalCountList =[[0]*256 for _ in range(3)]
+    maxVal = []
+    minVal = []
     #빈도수 계산
-    for i in range(outH) :
-        for k in range(outW) :
-            outCountList[outImage[i][k]] += 1
-    maxVal = max(outCountList)
-    minVal = min(outCountList)
+    for RGB in range(3) :
+        for i in range(outH) :
+            for k in range(outW) :
+                outCountList[RGB][outImage[RGB][i][k]] += 1
+        maxVal.append(max(outCountList[RGB]))
+        minVal.append(min(outCountList[RGB]))
     High = 256
-
+    print("max: " + str(maxVal[0]))
+    print("min :" + str(minVal[0]))
+    print(len(outCountList[RGB]))
     # 정규화 = (카운트 값 - 최소값) * High / (최대값 - 최소값)
-    for i in range(len(outCountList)) :
-        normalCountList[i] = (outCountList[i] - minVal) * High / (maxVal-minVal)
+    for i in range(3) :
+        for k in range(len(outCountList[RGB])) :
+            normalCountList[i][k] = (outCountList[i][k] - minVal[i]) * High / (maxVal[i]-minVal[i])
+    print(normalCountList)
 
-    ## 서브 윈도창 생성 후 출력
+    # 서브 윈도창 생성 후 출력
     subWindow = Toplevel(window) # window의 하위 window 생성
-    subWindow.geometry("256x256")
-    subCanvas = Canvas(subWindow, width = 256, height = 256)
-    subPaper = PhotoImage(width = 256, height = 256)
-    subCanvas.create_image((256//2,256//2),image = subPaper, state = "normal")
+    subWindow.geometry("768x256")
+    subCanvas = Canvas(subWindow, width = 768, height = 256)
+    subPaper = PhotoImage(width = 768, height = 256)
+    subCanvas.create_image((256*3//2,256//2),image = subPaper, state = "normal")
 
-    for i in range(len(normalCountList)) :
-        for k in range(int(normalCountList[i])) :
-            data = 0
-            subPaper.put('#%02x%02x%02x' % (data,data,data), (i, 255-k))
+    for RGB in range(3):
+        for i in range(len(normalCountList[RGB])) :
+            for k in range(int(normalCountList[RGB][i])) :
+                if RGB==0:
+                    subPaper.put('#d62719', (256*RGB + i, 255-k))
+                elif RGB==1:
+                    subPaper.put('#4fc34e', (256*RGB + i, 255-k))
+                elif RGB==2:
+                    subPaper.put('#1948b4', (256*RGB + i, 255-k))
+
     subCanvas.pack(expand = 1 , anchor = CENTER)
     subWindow.mainloop()
 
@@ -1226,19 +1238,17 @@ VIEW_X, VIEW_Y = 512,512 #화면에 보일 크기 (출력용)
 ####################
 #### 메인 코드부 ####
 ####################
-import tkinter as tk
-from tkinter import ttk
-window = tk.Tk()
+window = Tk()
 window.title('컴퓨터 비젼 (딥러닝-칼라) ver 0.1')
 window.geometry("600x600")
 
-status = tk.Label(window, text = '이미지 정보:',bd = 1 , relief = SUNKEN, anchor = W, fg="black")
+status = Label(window, text = '이미지 정보:',bd = 1 , relief = SUNKEN, anchor = W, fg="black")
 status.pack(side = BOTTOM,fill=X)
 
 mainMenu = tkinter.Menu(window)
 window.config(menu=mainMenu)
 
-fileMenu = tkinter.Menu(mainMenu,relief = "groove")
+fileMenu = tkinter.Menu(mainMenu)
 mainMenu.add_cascade(label='파일', menu=fileMenu)
 fileMenu.add_command(label='파일 열기', command=openImageColor)
 fileMenu.add_separator()
